@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gurupras/p2pmax/test_utils"
 	"github.com/gurupras/p2pmax/types"
@@ -161,7 +160,6 @@ func TestP2PMaxSendData(t *testing.T) {
 }
 
 func TestP2PMaxTransferData(t *testing.T) {
-	log.SetLevel(log.DebugLevel)
 	require := require.New(t)
 
 	pc1, pc2 := testSetupP2PConnections(require)
@@ -178,7 +176,7 @@ func TestP2PMaxTransferData(t *testing.T) {
 	log.Debugf("Set up max2")
 	max2.Start()
 
-	numConnections := 20
+	numConnections := 10
 	wg := sync.WaitGroup{}
 	wg.Add(numConnections)
 	max2.OnConnection(func(pc *webrtc.PeerConnection) {
@@ -192,12 +190,11 @@ func TestP2PMaxTransferData(t *testing.T) {
 	}
 	wg.Wait()
 
-	time.Sleep(time.Second * 3)
 	log.Debugf("Starting transfer")
 
 	// Now that all connections are ready, send data
 	size := 1 * 1024 * 1024
-	packetCount := 1000
+	packetCount := 100
 
 	wg = sync.WaitGroup{}
 	wg.Add(packetCount)
