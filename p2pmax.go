@@ -11,6 +11,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const MaxPacketSize = 65535
+
 type P2PMax struct {
 	Name              string
 	pc                *webrtc.PeerConnection
@@ -22,12 +24,14 @@ type P2PMax struct {
 	outgoingChan      chan []byte
 	incomingChan      chan []byte
 	readyWG           sync.WaitGroup
+	lengthEncoded     *LengthEncoded
 }
 
 type RawP2PConnection struct {
 	*P2PConnection
-	dc      io.ReadWriteCloser
-	readyWG sync.WaitGroup
+	dc            io.ReadWriteCloser
+	readyWG       sync.WaitGroup
+	lengthEncoded *LengthEncoded
 }
 
 func New(name string, pc *webrtc.PeerConnection, role Role) (*P2PMax, error) {
@@ -44,6 +48,7 @@ func New(name string, pc *webrtc.PeerConnection, role Role) (*P2PMax, error) {
 		incomingChan:      make(chan []byte),
 		outgoingChan:      make(chan []byte),
 		readyWG:           sync.WaitGroup{},
+		lengthEncoded:     NewLengthEncoded(MaxPacketSize),
 	}
 	ret.readyWG.Add(1) // Wait for signalDataChannel
 
@@ -56,8 +61,9 @@ func New(name string, pc *webrtc.PeerConnection, role Role) (*P2PMax, error) {
 				PeerConnection: pc,
 				onError:        nil,
 			},
-			dc:      rawDC,
-			readyWG: sync.WaitGroup{},
+			dc:            rawDC,
+			readyWG:       sync.WaitGroup{},
+			lengthEncoded: ret.lengthEncoded,
 		}
 		go rawConn.ReadLoop(ret.incomingChan)
 		go rawConn.WriteLoop(ret.outgoingChan)
@@ -170,7 +176,7 @@ func (p *P2PMax) CreateNewConnection(name string, role Role, peer string) (*RawP
 		p.mutex.Lock()
 		defer p.mutex.Unlock()
 		log.Debugf("[%v]: Writing %v bytes (length-encoded) on signalDataChannel", connName, len(b))
-		err = writeLengthEncoded(p.signalDataChannel, b)
+		err = p.lengthEncoded.Write(p.signalDataChannel, b)
 		if err != nil {
 			return err
 		}
@@ -196,6 +202,7 @@ func (p *P2PMax) CreateNewConnection(name string, role Role, peer string) (*RawP
 	ret := &RawP2PConnection{
 		P2PConnection: pc,
 		readyWG:       sync.WaitGroup{},
+		lengthEncoded: p.lengthEncoded,
 	}
 	ret.readyWG.Add(1)
 	go ret.ReadLoop(p.incomingChan)
@@ -224,7 +231,7 @@ func (p *P2PMax) CreateNewConnection(name string, role Role, peer string) (*RawP
 			From: p.Name,
 		}
 		b, _ := json.Marshal(ncp)
-		if err = writeLengthEncoded(p.signalDataChannel, b); err != nil {
+		if err = p.lengthEncoded.Write(p.signalDataChannel, b); err != nil {
 			return nil, fmt.Errorf("failed to signal creation of new connection: %v", err)
 		}
 		// We need to kickstart the connection
@@ -252,16 +259,16 @@ func (p *P2PMax) CreateNewConnection(name string, role Role, peer string) (*RawP
 
 func (p *P2PMax) signalLoop() {
 	p.readyWG.Wait()
-	for {
-		b, err := readLengthEncoded(p.signalDataChannel)
-		if err != nil {
-			log.Errorf("[%v]: %v", p.Name, err)
-			return
-		}
+
+	handleMessage := func(poolBytes *PoolBytes) error {
+		var err error
 		var pkt types.Packet
+		defer poolBytes.Dispose()
+
+		b := poolBytes.Bytes()
 		if err = json.Unmarshal(b, &pkt); err != nil {
 			log.Errorf("[%v]: Failed to unmarshal bytes into Packet: %v", p.Name, err)
-			return
+			return err
 		}
 		if p.onPacket != nil {
 			p.onPacket(&pkt)
@@ -272,13 +279,13 @@ func (p *P2PMax) signalLoop() {
 			var pkt types.NewConnectionPacket
 			if err = json.Unmarshal(b, &pkt); err != nil {
 				log.Errorf("[%v]: Failed to unmarshal bytes into NewConnectionPacket: %v", p.Name, err)
-				return
+				return err
 			}
 
 			var newConnectionName string
 			if err = json.Unmarshal(pkt.Data, &newConnectionName); err != nil {
 				log.Errorf("[%v]: Failed to unmarshal name of new connection: %v", p.Name, err)
-				return
+				return err
 			}
 			pc, err := p.CreateNewConnection(newConnectionName, Answerer, pkt.From)
 			if err != nil {
@@ -293,14 +300,25 @@ func (p *P2PMax) signalLoop() {
 			var data types.SignalPacket
 			if err = json.Unmarshal(b, &data); err != nil {
 				log.Errorf("[%v]: Failed to unmarshal bytes into SignalPacket: %v", p.Name, err)
-				continue
+				return err
 			}
 			pc, ok := p.ConnectionMap[data.Peer]
 			if !ok {
 				log.Errorf("[%v]: Did not find connection '%v'", p.Name, data.Peer)
-				continue
+				return err
 			}
 			pc.OnSignalPacket(&data)
+		}
+		return nil
+	}
+	for {
+		poolBytes, err := p.lengthEncoded.Read(p.signalDataChannel)
+		if err != nil {
+			log.Errorf("[%v]: %v", p.Name, err)
+			return
+		}
+		if err := handleMessage(poolBytes); err != nil {
+			return
 		}
 	}
 }
@@ -346,7 +364,7 @@ func (r *RawP2PConnection) WriteLoop(inChan <-chan []byte) {
 	r.readyWG.Wait()
 	for b := range inChan {
 		log.Debugf("[%v]: Attempting to send %v bytes", r.Name, len(b))
-		err := writeLengthEncoded(r.dc, b, 65535)
+		err := r.lengthEncoded.Write(r.dc, b)
 		if err != nil {
 			log.Errorf("Failed to write data to channel: %v", err)
 			return

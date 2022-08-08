@@ -49,7 +49,7 @@ func TestP2PMaxReadLoop(t *testing.T) {
 	b, err := json.Marshal(ncp)
 	require.Nil(err)
 
-	writeLengthEncoded(buf, b)
+	max1.lengthEncoded.Write(buf, b)
 
 	max1.signalDataChannel = buf
 	max1.Start()
