@@ -6,15 +6,24 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 )
 
-func writeLengthEncoded(writer io.Writer, b []byte, optChunkSize ...int) error {
-	lenBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(lenBytes, uint64(len(b)))
+var lengthBytesPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 8)
+		return &b
+	},
+}
 
-	_, err := writer.Write(lenBytes)
+func writeLengthEncoded(writer io.Writer, b []byte, optChunkSize ...int) error {
+	lenBytes := lengthBytesPool.Get().(*[]byte)
+	binary.LittleEndian.PutUint64(*lenBytes, uint64(len(b)))
+
+	_, err := writer.Write(*lenBytes)
+	lengthBytesPool.Put(lenBytes)
 	if err != nil {
 		return err
 	}
@@ -40,14 +49,15 @@ func writeLengthEncoded(writer io.Writer, b []byte, optChunkSize ...int) error {
 
 func readLengthEncoded(reader io.Reader) ([]byte, error) {
 	var n uint64
-	lenBytes := make([]byte, 8)
-	_, err := reader.Read(lenBytes)
+	lenBytes := lengthBytesPool.Get().(*[]byte)
+	_, err := reader.Read(*lenBytes)
 	if err != nil {
 		return nil, fmt.Errorf("error during length read: %v", err)
 	}
-	if err = binary.Read(bytes.NewBuffer(lenBytes), binary.LittleEndian, &n); err != nil {
+	if err = binary.Read(bytes.NewBuffer(*lenBytes), binary.LittleEndian, &n); err != nil {
 		return nil, fmt.Errorf("failed to convert bytes to uint64: %v", err)
 	}
+	lengthBytesPool.Put(lenBytes)
 	log.Debugf("Attempting to read %v bytes", n)
 	// OK, now that we have the total packet length, read that many bytes in
 	b := make([]byte, n)
