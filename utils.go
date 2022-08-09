@@ -92,10 +92,10 @@ func (l *LengthEncoded) Read(reader io.Reader) (*PoolBytes, error) {
 	log.Debugf("Attempting to read %v bytes", n)
 	// OK, now that we have the total packet length, read that many bytes in
 	b := l.packetBytesPool.Get().(*[]byte)
-	_, err = io.ReadFull(reader, (*b)[:n])
+	r, err := io.ReadFull(reader, (*b)[:n])
 	if err != nil {
 		l.packetBytesPool.Put(b)
-		return nil, fmt.Errorf("error during bytes read: %v", err)
+		return nil, fmt.Errorf("error during bytes read: %v (read=%v; wanted=%v)", err, r, n)
 	}
 	return &PoolBytes{
 		b:   b,

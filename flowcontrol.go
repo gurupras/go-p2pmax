@@ -6,8 +6,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var MaxBufferedAmount = uint64(1 * 1024 * 1024)
-var BufferedAmountLowThreshold = uint64(128 * 1024)
+var MaxBufferedAmount = uint64(2 * 1024 * 1024)
+var BufferedAmountLowThreshold = uint64(512 * 1024)
 
 type FlowControlledDataChannel struct {
 	DataChannel  *webrtc.DataChannel
@@ -46,15 +46,17 @@ func SetupFlowControl(dc *webrtc.DataChannel, maxBuffered, lowThreshold uint64) 
 		Raw:          raw,
 		maxBuffered:  maxBuffered,
 		lowThreshold: lowThreshold,
-		sendMoreChan: make(chan struct{}, 1),
+		sendMoreChan: make(chan struct{}),
 	}
 
 	dc.SetBufferedAmountLowThreshold(lowThreshold)
 
 	dc.OnBufferedAmountLow(func() {
-		log.Debugf("Writing to sendMoreChan")
-		ret.sendMoreChan <- struct{}{}
-		log.Debugf("Wrote to sendMoreChan")
+		go func() {
+			log.Debugf("Writing to sendMoreChan")
+			ret.sendMoreChan <- struct{}{}
+			log.Debugf("Wrote to sendMoreChan")
+		}()
 	})
 	return ret, nil
 }

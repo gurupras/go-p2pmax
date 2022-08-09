@@ -79,8 +79,10 @@ func New(name string, pc *webrtc.PeerConnection, role Role) (*P2PMax, error) {
 			wg := sync.WaitGroup{}
 			wg.Add(1)
 			ordered := true
+			maxRetransmits := uint16(100)
 			dc, err := pc.CreateDataChannel(channelName, &webrtc.DataChannelInit{
-				Ordered: &ordered,
+				Ordered:        &ordered,
+				MaxRetransmits: &maxRetransmits,
 			})
 			if err != nil {
 				log.Errorf("Failed to create data channel: %v", err)
@@ -231,11 +233,18 @@ func (p *P2PMax) CreateNewConnection(name string, role Role, peer string) (*RawP
 			From: p.Name,
 		}
 		b, _ := json.Marshal(ncp)
+		p.mutex.Lock()
 		if err = p.lengthEncoded.Write(p.signalDataChannel, b); err != nil {
 			return nil, fmt.Errorf("failed to signal creation of new connection: %v", err)
 		}
+		p.mutex.Unlock()
 		// We need to kickstart the connection
-		dc, err := pc.CreateDataChannel("p2pmax-data", nil)
+		ordered := true
+		maxRetransmits := uint16(100)
+		dc, err := pc.CreateDataChannel("p2pmax-data", &webrtc.DataChannelInit{
+			Ordered:        &ordered,
+			MaxRetransmits: &maxRetransmits,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -302,11 +311,13 @@ func (p *P2PMax) signalLoop() {
 				log.Errorf("[%v]: Failed to unmarshal bytes into SignalPacket: %v", p.Name, err)
 				return err
 			}
+			p.mutex.Lock()
 			pc, ok := p.ConnectionMap[data.Peer]
 			if !ok {
 				log.Errorf("[%v]: Did not find connection '%v'", p.Name, data.Peer)
 				return err
 			}
+			p.mutex.Unlock()
 			pc.OnSignalPacket(&data)
 		}
 		return nil

@@ -160,6 +160,7 @@ func TestP2PMaxSendData(t *testing.T) {
 }
 
 func TestP2PMaxTransferData(t *testing.T) {
+	// log.SetLevel(log.DebugLevel)
 	require := require.New(t)
 
 	pc1, pc2 := testSetupP2PConnections(require)
@@ -204,11 +205,12 @@ func TestP2PMaxTransferData(t *testing.T) {
 			b := max2.Read()
 			require.Equal(size, len(b))
 			wg.Done()
+			log.Debugf("Finished receiving %v", idx)
 		}
 	}()
 
-	buf := bytes.NewBuffer(nil)
 	for idx := 0; idx < packetCount; idx++ {
+		buf := bytes.NewBuffer(nil)
 		test_utils.WriteRandomDataSize(buf, int64(size))
 		err := max1.Write(buf.Bytes())
 		require.Nil(err)
