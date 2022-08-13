@@ -3,6 +3,7 @@ module github.com/gurupras/p2pmax
 go 1.19
 
 require (
+	github.com/alecthomas/kingpin v2.2.6+incompatible
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/pion/datachannel v1.5.2
@@ -12,6 +13,8 @@ require (
 )
 
 require (
+	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
+	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/pion/dtls/v2 v2.1.5 // indirect

@@ -189,9 +189,6 @@ func (p *P2PMax) CreateNewConnection(name string, role Role, peer string) (*RawP
 	if err != nil {
 		return nil, err
 	}
-	if p.Name == "pc-2" {
-		log.Debugf("[%v]: Created new P2PConnection object: %v", p.Name, connName)
-	}
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		log.Debugf("[%v]: Connection state changed to: %v", connName, pcs)
 		if pcs == webrtc.PeerConnectionStateClosed || pcs == webrtc.PeerConnectionStateDisconnected {

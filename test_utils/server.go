@@ -28,6 +28,7 @@ type Server struct {
 	DeviceMap            map[string]*websocket.Conn
 	onWebSocketConn      func(c *websocket.Conn)
 	onWebSocketConnClose func(c *websocket.Conn)
+	doneChan             chan struct{}
 }
 
 func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +67,7 @@ func (s *Server) websocketLoop(deviceID string, c *websocket.Conn) {
 	}()
 
 	for {
+		log.Debugf("Reading message from websocket '%v' ...", deviceID)
 		mt, message, err := c.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure) {
@@ -73,6 +75,7 @@ func (s *Server) websocketLoop(deviceID string, c *websocket.Conn) {
 			}
 			break
 		}
+		log.Debugf("Got message from websocket '%v'", deviceID)
 		pkt := types.SignalPacket{}
 		err = json.Unmarshal(message, &pkt)
 		if err != nil {
@@ -122,6 +125,7 @@ func New(port int) *Server {
 		context:   ctx,
 		cancel:    cancel,
 		DeviceMap: make(map[string]*websocket.Conn),
+		doneChan:  make(chan struct{}, 1),
 	}
 
 	r.HandleFunc("/ws", server.HandleWebsocket)
@@ -151,4 +155,9 @@ func (s *Server) Start() error {
 func (s *Server) Stop() {
 	defer s.cancel()
 	s.server.Shutdown(s.context)
+	s.doneChan <- struct{}{}
+}
+
+func (s *Server) Wait() {
+	<-s.doneChan
 }
